@@ -131,7 +131,7 @@ func (r *Resp) readInteger() (x int, n int, err error) {
 func (r *Resp) Read() (Value, error) {
 	_type, err := r.reader.ReadByte()
 	if err != nil {
-		return Value{}, nil
+		return Value{}, err
 	}
 
 	switch _type {
@@ -157,8 +157,8 @@ func (r *Resp) readArray() (Value, error) {
 	v.array = make([]Value, len)
 	for i := range len {
 		val, err := r.Read()
-		if err != nil {
-			return v, nil
+		if err != nil {	
+			return v, err
 		}
 		v.array[i] = val
 	}

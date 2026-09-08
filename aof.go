@@ -1,7 +1,7 @@
 package main
 
 import (
-	"bufio"
+	"io"
 	"os"
 	"sync"
 	"time"
@@ -9,8 +9,7 @@ import (
 
 type Aof struct {
 	file *os.File
-	rd *bufio.Reader
-	mu sync.Mutex
+	mu   sync.Mutex
 }
 
 func NewAof(path string) (*Aof, error) {
@@ -22,7 +21,6 @@ func NewAof(path string) (*Aof, error) {
 
 	aof := &Aof{
 		file: f,
-		rd: bufio.NewReader(f),
 	}
 
 	go func() {
@@ -51,6 +49,27 @@ func (aof *Aof) Write(value Value) error {
 	_, err := aof.file.Write(value.Marshal())
 	if err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func (aof *Aof) Read(callback func(value Value)) error {
+	aof.mu.Lock()
+	defer aof.mu.Unlock()
+
+	resp := NewResp(aof.file)
+
+	for {
+		value, err := resp.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+
+		callback(value)
 	}
 
 	return nil
