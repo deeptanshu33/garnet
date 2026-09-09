@@ -5,17 +5,25 @@ import (
 	"sync"
 )
 
-var SETs = map[string]string{}
-var HSETs = map[string]map[string]string{}
+type DB struct {
+	SETs    map[string]string
+	HSETs   map[string]map[string]string
+	SETsMu  sync.RWMutex
+	HSETsMu sync.RWMutex
+}
 
-var SETsMu = sync.RWMutex{}
-var HSETsMu = sync.RWMutex{}
+func NewDB() *DB {
+	return &DB{
+		SETs: make(map[string]string),
+		HSETs: make(map[string]map[string]string),
+	}
+}
 
-func ping(args []Value) Value {
+func (db *DB) ping(args []Value) Value {
 	return Value{typ: "string", str: "PONG"}
 }
 
-func set(args []Value) Value {
+func (db *DB) set(args []Value) Value {
 	if len(args) != 2 {
 		return Value{typ: "error", str: "ERR wrong number of arguments for 'set' command"}
 	}
@@ -24,14 +32,14 @@ func set(args []Value) Value {
 	// fmt.Printf("key: %v\n", key)
 	value := args[1].bulk
 	// fmt.Printf("val: %v\n", value)
-	SETsMu.Lock()
-	SETs[key] = value
-	SETsMu.Unlock()
+	db.SETsMu.Lock()
+	db.SETs[key] = value
+	db.SETsMu.Unlock()
 
 	return Value{typ: "string", str: "OK"}
 }
 
-func hset(args []Value) Value {
+func (db *DB) hset(args []Value) Value {
 	if len(args) != 3 {
 		return Value{typ: "error", str: "ERR wrong number of arguments for 'hset' command"}
 	}
@@ -40,20 +48,20 @@ func hset(args []Value) Value {
 	key := args[1].bulk
 	val := args[2].bulk
 
-	if _, ok := HSETs[mp]; !ok {
-		HSETsMu.Lock()
-		HSETs[mp] = map[string]string{}
-		HSETsMu.Unlock()
+	if _, ok := db.HSETs[mp]; !ok {
+		db.HSETsMu.Lock()
+		db.HSETs[mp] = map[string]string{}
+		db.HSETsMu.Unlock()
 	}
 
-	HSETsMu.Lock()
-	HSETs[mp][key] = val
-	HSETsMu.Unlock()
+	db.HSETsMu.Lock()
+	db.HSETs[mp][key] = val
+	db.HSETsMu.Unlock()
 
 	return Value{typ: "string", str: "OK"}
 }
 
-func hget(args []Value) Value {
+func (db *DB) hget(args []Value) Value {
 	if len(args) != 2 {
 		return Value{typ: "error", str: "ERR wrong number of arguments for 'hget' command"}
 	}
@@ -61,9 +69,9 @@ func hget(args []Value) Value {
 	mp := args[0].bulk
 	key := args[1].bulk
 
-	HSETsMu.RLock()
-	val, ok := HSETs[mp][key]
-	HSETsMu.RUnlock()
+	db.HSETsMu.RLock()
+	val, ok := db.HSETs[mp][key]
+	db.HSETsMu.RUnlock()
 
 	if !ok {
 		return Value{typ: "null"}
@@ -72,17 +80,17 @@ func hget(args []Value) Value {
 	return Value{typ: "bulk", bulk: val}
 }
 
-func get(args []Value) Value {
+func (db *DB) get(args []Value) Value {
 	if len(args) != 1 {
 		return Value{typ: "error", str: "ERR wrong number of arguments for 'get' command"}
 	}
 
 	key := args[0].bulk
 	// fmt.Printf("key: %v\n", key)
-	
-	SETsMu.RLock()
-	value, ok := SETs[key]
-	SETsMu.RUnlock()
+
+	db.SETsMu.RLock()
+	value, ok := db.SETs[key]
+	db.SETsMu.RUnlock()
 
 	if !ok {
 		return Value{typ: "null"}
@@ -91,10 +99,12 @@ func get(args []Value) Value {
 	return Value{typ: "bulk", bulk: value}
 }
 
-var Handlers = map[string]func([]Value) Value {
-	"PING": ping,
-	"SET": set,
-	"GET": get,
-	"HSET": hset,
-	"HGET": hget,
+func NewHandlers(db *DB) map[string]func([]Value) Value {
+	return map[string]func([]Value) Value{
+		"PING": db.ping,
+		"SET":  db.set,
+		"GET":  db.get,
+		"HSET": db.hset,
+		"HGET": db.hget,
+	}
 }

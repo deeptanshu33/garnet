@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"strings"
+
 	// "io"
 	"net"
 	// "os"
@@ -17,6 +18,9 @@ func main() {
 		fmt.Println(err)
 		return
 	}
+
+	db := NewDB()
+	handlers := NewHandlers(db)
 
 	aof, err := NewAof("database.aof")
 	if err != nil {
@@ -39,7 +43,7 @@ func main() {
 		command := strings.ToUpper(value.array[0].bulk)
 		args := value.array[1:]
 
-		handler, ok := Handlers[command]
+		handler, ok := handlers[command]
 		if !ok {
 			fmt.Println("Invalid command: ", command)
 			return
@@ -71,14 +75,14 @@ func main() {
 
 		writer := NewWriter(conn)
 
-		handler, ok := Handlers[command]
+		handler, ok := handlers[command]
 		if !ok {
 			fmt.Println("Invalid command: ", command)
 			writer.Write(Value{typ: "string", str: ""})
 			continue
 		}
 
-		if command=="SET" || command=="HSET" {
+		if command == "SET" || command == "HSET" {
 			aof.Write(val)
 		}
 
