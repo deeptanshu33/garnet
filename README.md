@@ -1,6 +1,6 @@
 # Garnet
 
-A lightweight, multithreaded, in-memory key-value store built in Go. Garnet speaks the [RESP (Redis Serialization Protocol)](https://redis.io/docs/latest/develop/reference/protocol-spec/), so any standard Redis client — including `redis-cli` — works out of the box.
+A lightweight, multithreaded, in-memory key-value store built in Go. Garnet speaks the [RESP (Redis Serialization Protocol)](https://redis.io/docs/latest/develop/reference/protocol-spec/), so any standard Redis client, including `redis-cli` works out of the box.
 
 > **Why "Garnet"?** Like the gemstone, it's small, hard, and fast.
 
