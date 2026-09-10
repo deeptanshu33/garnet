@@ -65,14 +65,14 @@ OK
 
 | Command | Syntax | Description |
 |---|---|---|
-| **SET** | `SET key value [EX seconds \| PX milliseconds]` | Set a string value, optionally with an expiry |
+| **SET** | `SET key value [EX seconds \| PX milliseconds \| KEEPTTL]` | Set a string value. `EX`/`PX` set an expiry; `KEEPTTL` preserves an existing TTL on overwrite. Without options, any existing TTL is cleared |
 | **GET** | `GET key` | Retrieve the value of a key (returns `nil` if not found) |
 
 ### Hashes
 
 | Command | Syntax | Description |
 |---|---|---|
-| **HSET** | `HSET hash field value [EX seconds \| PX milliseconds]` | Set a field in a hash, optionally with an expiry on the hash |
+| **HSET** | `HSET hash field value [EX seconds \| PX milliseconds]` | Set a field in a hash, optionally with an expiry on the whole hash |
 | **HGET** | `HGET hash field` | Retrieve the value of a field within a hash |
 
 ### TTL & Expiry
@@ -81,6 +81,9 @@ OK
 |---|---|---|
 | **TTL** | `TTL key` | Time-to-live in **seconds**. Returns `-2` if the key doesn't exist, `-1` if no expiry is set |
 | **PTTL** | `PTTL key` | Time-to-live in **milliseconds**. Same return semantics as `TTL` |
+| **EXPIRE** | `EXPIRE key seconds` | Set a TTL (in seconds) on an existing key. Returns `1` on success, `0` if the key doesn't exist. A non-positive value deletes the key |
+| **EXPIREAT** | `EXPIREAT key unix-timestamp` | Set an expiry at an absolute Unix timestamp (seconds). Past timestamps delete the key immediately |
+| **PERSIST** | `PERSIST key` | Remove the TTL from a key, making it persistent. Returns `1` if a TTL was removed, `0` if the key doesn't exist or has no TTL |
 
 ### Utility
 
