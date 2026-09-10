@@ -31,6 +31,8 @@ func (v Value) Marshal() []byte {
 		return v.marshalBulk()
 	case "string":
 		return v.marshalString()
+	case "integer":
+		return v.marshalInteger()
 	case "null":
 		return v.marshalNull()
 	case "error":
@@ -85,6 +87,14 @@ func (v Value) marshalError() []byte {
 
 func (v Value) marshalNull() []byte {
 	return []byte("$-1\r\n")
+}
+
+func (v Value) marshalInteger() []byte {
+	var bytes []byte
+	bytes = append(bytes, INTEGER)
+	bytes = append(bytes, strconv.FormatInt(int64(v.num), 10)...)
+	bytes = append(bytes, '\r', '\n')
+	return bytes
 }
 
 type Resp struct {

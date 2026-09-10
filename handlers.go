@@ -7,6 +7,11 @@ import (
 	"time"
 )
 
+const (
+	SETSTR  = "set"
+	HSETSTR = "hset"
+)
+
 type DB struct {
 	SETs  map[string]string
 	HSETs map[string]map[string]string
@@ -75,34 +80,6 @@ func (db *DB) set(args []Value) Value {
 	}
 
 	return Value{typ: "string", str: "OK"}
-}
-
-func (db *DB) clearTimer(key string) {
-	db.ExpiryMu.Lock()
-	db.TimerMu.Lock()
-
-	if timer, ok := db.Timer[key]; ok {
-		timer.Stop()
-		delete(db.Timer, key)
-	}
-
-	delete(db.Expiry, key)
-
-	db.TimerMu.Unlock()
-	db.ExpiryMu.Unlock()
-}
-
-func validExpiry(value1, value2 Value) (int, bool) {
-	if (value1.typ != "bulk" || value2.typ != "bulk") || (strings.ToUpper(value1.bulk) != "EX" && strings.ToUpper(value1.bulk) != "PX") {
-		return -1, false
-	}
-
-	n, err := strconv.Atoi(value2.bulk)
-	if err != nil {
-		return -1, false
-	}
-
-	return n, n >= 0
 }
 
 func (db *DB) hset(args []Value) Value {
@@ -190,69 +167,23 @@ func (db *DB) get(args []Value) Value {
 	return Value{typ: "bulk", bulk: value}
 }
 
-func (db *DB) setExpiry(expType, key string, duration time.Duration) {
-	expiryTime := time.Now().Add(duration)
-
-	db.TimerMu.Lock()
-
-	if oldTimer, ok := db.Timer[key]; ok {
-		oldTimer.Stop()
-	}
-
-	expiryFunc := time.AfterFunc(duration, func() {
-		db.ExpiryMu.Lock()
-		currentExpiry, exists := db.Expiry[key]
-		db.ExpiryMu.Unlock()
-
-		if !exists || !currentExpiry.Equal(expiryTime) {
-			return
-		}
-
-		switch expType {
-		case "set":
-			db.SETsMu.Lock()
-			delete(db.SETs, key)
-			db.SETsMu.Unlock()
-		case "hset":
-			db.HSETsMu.Lock()
-			delete(db.HSETs, key)
-			db.HSETsMu.Unlock()
-		}
-
-		db.ExpiryMu.Lock()
-		delete(db.Expiry, key)
-		db.ExpiryMu.Unlock()
-
-		db.TimerMu.Lock()
-		delete(db.Timer, key)
-		db.TimerMu.Unlock()
-	})
-
-	db.Timer[key] = expiryFunc
-	db.TimerMu.Unlock()
-
-	db.ExpiryMu.Lock()
-	db.Expiry[key] = expiryTime
-	db.ExpiryMu.Unlock()
-}
-
 func (db *DB) ttl(args []Value) Value {
 	if len(args) != 1 {
 		return Value{typ: "error", str: "ERR wrong number of arguments for 'ttl' command"}
 	}
 
 	if !db.keyExists(args[0].bulk) {
-		return Value{typ: "string", str: "-2"}
+		return Value{typ: "integer", num: -2}
 	}
 
 	if !db.expiryExists(args[0].bulk) {
-		return Value{typ: "string", str: "-1"}
+		return Value{typ: "integer", num: -1}
 	}
 
 	timeRemaining := db.getRemainingTime(args[0].bulk)
 	timeRemainingSec := int64(timeRemaining.Seconds())
 
-	return Value{typ: "string", str: strconv.Itoa(int(timeRemainingSec))}
+	return Value{typ: "integer", num: int(timeRemainingSec)}
 }
 
 func (db *DB) pttl(args []Value) Value {
@@ -261,45 +192,17 @@ func (db *DB) pttl(args []Value) Value {
 	}
 
 	if !db.keyExists(args[0].bulk) {
-		return Value{typ: "string", str: "-2"}
+		return Value{typ: "integer", num: -2}
 	}
 
 	if !db.expiryExists(args[0].bulk) {
-		return Value{typ: "string", str: "-1"}
+		return Value{typ: "integer", num: -1}
 	}
 
 	timeRemaining := db.getRemainingTime(args[0].bulk)
 	timeRemainingSec := int64(timeRemaining.Milliseconds())
 
-	return Value{typ: "string", str: strconv.Itoa(int(timeRemainingSec))}
-}
-
-func (db *DB) getRemainingTime(key string) time.Duration {
-	return time.Until(db.Expiry[key])
-}
-
-func (db *DB) keyExists(key string) bool {
-	db.SETsMu.Lock()
-	_, ok := db.SETs[key]
-	db.SETsMu.Unlock()
-
-	if ok {
-		return true
-	}
-
-	db.HSETsMu.Lock()
-	_, ok = db.HSETs[key]
-	db.HSETsMu.Unlock()
-
-	return ok
-}
-
-func (db *DB) expiryExists(key string) bool {
-	db.ExpiryMu.RLock()
-	_, ok := db.Expiry[key]
-	db.ExpiryMu.RUnlock()
-
-	return ok
+	return Value{typ: "integer", num: int(timeRemainingSec)}
 }
 
 func (db *DB) expire(args []Value) Value {
@@ -307,20 +210,89 @@ func (db *DB) expire(args []Value) Value {
 		return Value{typ: "error", str: "ERR wrong number of arguments for 'expire' command"}
 	}
 	if !db.keyExists(args[0].bulk) {
-		return Value{typ: "string", str: "0"}
+		return Value{typ: "integer", num: 0}
 	}
 
-	return Value{typ: "string", str: "1"}
+	db.clearTimer(args[0].bulk)
+	expType := db.getExpiryType(args[0].bulk)
+
+	d, err := strconv.Atoi(args[1].bulk)
+
+	if err != nil {
+		return Value{typ: "error", str: "ERR wrong arguments for 'expire' command"}
+	}
+
+	if d <= 0 {
+		db.setExpiry(expType, args[0].bulk, time.Duration(0)*time.Second)
+	} else {
+		db.setExpiry(expType, args[0].bulk, time.Duration(d)*time.Second)
+	}
+
+	return Value{typ: "integer", num: 1}
+}
+
+func (db *DB) expireat(args []Value) Value {
+	if len(args) != 2 {
+		return Value{typ: "error", str: "ERR wrong number of arguments for 'expireat' command"}
+	}
+
+	if !db.keyExists(args[0].bulk) {
+		return Value{typ: "integer", num: 0}
+	}
+
+	db.clearTimer(args[0].bulk)
+
+	ts, err := strconv.ParseInt(args[1].bulk, 10, 64)
+	if err != nil {
+		return Value{typ: "error", str: "ERR value is not an integer or out of range"}
+	}
+
+	duration := time.Until(time.Unix(ts, 0))
+
+	expType := db.getExpiryType(args[0].bulk)
+
+	if duration <= 0 {
+		db.deleteKey(expType, args[0].bulk)
+	} else {
+		db.setExpiry(expType, args[0].bulk, duration)
+	}
+
+	return Value{typ: "integer", num: 1}
+}
+
+func (db *DB) persist(args []Value) Value {
+	if len(args) != 1 {
+		return Value{typ: "error", str: "ERR wrong number of arguments for 'persist' command"}
+	}
+
+	if !db.keyExists(args[0].bulk) {
+		return Value{typ: "integer", num: 0}
+	}
+
+	db.ExpiryMu.RLock()
+	_, hasTTL := db.Expiry[args[0].bulk]
+	db.ExpiryMu.RUnlock()
+
+	if !hasTTL {
+		return Value{typ: "integer", num: 0}
+	}
+
+	db.clearTimer(args[0].bulk)
+
+	return Value{typ: "integer", num: 1}
 }
 
 func NewHandlers(db *DB) map[string]HandlerFunc {
 	return map[string]HandlerFunc{
-		"PING": db.ping,
-		"SET":  db.set,
-		"GET":  db.get,
-		"HSET": db.hset,
-		"HGET": db.hget,
-		"TTL":  db.ttl,
-		"PTTL": db.pttl,
+		"PING":     db.ping,
+		"SET":      db.set,
+		"GET":      db.get,
+		"HSET":     db.hset,
+		"HGET":     db.hget,
+		"TTL":      db.ttl,
+		"PTTL":     db.pttl,
+		"EXPIRE":   db.expire,
+		"EXPIREAT": db.expireat,
+		"PERSIST":  db.persist,
 	}
 }
